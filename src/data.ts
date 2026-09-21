@@ -52,5 +52,25 @@ export const FAQ = [
   { q: '가입한 지 오래된 보험도 봐주시나요?', a: '네. 오래된 계약일수록 지금은 못 만드는 조건이 섞여 있어, 해지보다 유지가 유리한 경우가 많습니다.' },
 ]
 
+export type Row = { n: string; co: string; m: number; dup?: string; trim?: [string, number]; gap?: boolean }
+
+// 센터피스 예시 분석표 — 실제 고객 자료 아님
+export const SHEET: Row[] = [
+  { n: '실손의료비', co: 'A손해보험', m: 38200 },
+  { n: '실손의료비', co: 'B손해보험', m: 21400, dup: '중복 보장' },
+  { n: '암 진단비', co: 'C생명', m: 46800 },
+  { n: '종신보험', co: 'D생명', m: 142000, trim: ['특약 정리', 98700] },
+  { n: '운전자보험', co: 'E화재', m: 12300 },
+  { n: '상해보험', co: 'F화재', m: 17500 },
+  { n: '뇌혈관·심장 진단비', co: '없음', m: 18900, gap: true },
+]
+
+export const STEPS = [
+  { t: '가진 증권을 전부 불러옵니다', d: '동의를 받은 뒤 보험협회 조회로 흩어진 계약을 한 표에 모읍니다.' },
+  { t: '겹친 곳을 찾습니다', d: '실손처럼 두 곳에 들어도 나눠서 나오는 보장은 하나로 줄입니다.' },
+  { t: '비어 있는 곳을 표시합니다', d: '나이와 가족 상황에 비해 빠진 보장을 표에 따로 적어 둡니다.' },
+  { t: '정리 전후 보험료를 나란히 봅니다', d: '결정은 분석표를 받아 보시고 생각해 본 뒤에 합니다.' },
+]
+
 // 저장 + 설계사 폰 푸시를 한 번에 처리하는 기존 Edge Function (원본 사이트와 동일)
 export const SUBMIT_URL = 'https://zupphewhvhzsbttzmmsp.supabase.co/functions/v1/card-submit'
