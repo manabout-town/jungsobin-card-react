@@ -1,80 +1,71 @@
-import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type InputHTMLAttributes } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type InputHTMLAttributes, type PointerEvent } from 'react'
+import gsap from 'gsap'
+import { ScrollTrigger } from 'gsap/ScrollTrigger'
+import { SplitText } from 'gsap/SplitText'
+import { useGSAP } from '@gsap/react'
+import Lenis from 'lenis'
 import { CHECKS, FAQ, PRINCIPLES, PROFILE as P, SHEET, STAGES, STEPS, SUBMIT_URL } from './data'
 
+gsap.registerPlugin(ScrollTrigger, SplitText, useGSAP)
+
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches
+const MOTION = '(prefers-reduced-motion: no-preference)'
+const EASE = 'expo.out'
 const won = (n: number) => n.toLocaleString('ko-KR')
+let lenis: Lenis | null = null
 
-// 진입: 흩어진 증권 여섯 장이 한 장으로 겹쳐진다
-const PAPERS = [[-38, -22, -14], [30, -30, 11], [-30, 26, 8], [36, 20, -9], [-6, -40, 4], [4, 34, -5]]
-
-function Intro() {
-  const [stage, setStage] = useState(RM ? 3 : 0) // 0 흩어짐 · 1 모임 · 2 걷힘 · 3 끝
-  useEffect(() => {
-    if (RM) return
-    document.documentElement.classList.add('lock')
-    const t1 = setTimeout(() => setStage(s => Math.max(s, 1)), 450)
-    const t2 = setTimeout(() => setStage(s => Math.max(s, 2)), 2100)
-    const t3 = setTimeout(() => setStage(3), 4000) // 느린 망에서도 4초면 강제 개봉
-    const skip = () => setStage(s => Math.max(s, 2))
-    const evs = ['wheel', 'touchstart', 'keydown', 'click'] as const
-    evs.forEach(e => addEventListener(e, skip, { once: true, passive: true }))
-    return () => { [t1, t2, t3].forEach(clearTimeout); evs.forEach(e => removeEventListener(e, skip)) }
-  }, [])
-  useEffect(() => {
-    if (stage < 2) return
-    const t = setTimeout(() => { setStage(3); document.documentElement.classList.remove('lock') }, 640)
-    return () => clearTimeout(t)
-  }, [stage])
-  if (stage === 3) return null
-  return (
-    <div className={'intro s' + stage} aria-hidden="true">
-      <div className="pile">
-        {PAPERS.map(([x, y, r], k) => (
-          <i key={k} style={{ '--x': `${x}vmin`, '--y': `${y}vmin`, '--r': `${r}deg`, '--d': `${k * 50}ms` } as CSSProperties} />
-        ))}
-      </div>
-      <p>흩어진 증권을 한 장으로</p>
-      <small>정소빈 · 굿리치 보험설계사</small>
-    </div>
-  )
-}
+const scrollToY = (y: number) => lenis ? lenis.scrollTo(y, { duration: 1.2 }) : scrollTo({ top: y, behavior: RM ? 'auto' : 'smooth' })
 
 function Img({ src, alt, className }: { src: string; alt: string; className?: string }) {
   const [ok, setOk] = useState(false)
   const [dead, setDead] = useState(false)
   if (dead) return null
   return <img className={(className ?? '') + (ok ? ' ok' : '')} src={src} alt={alt} decoding="async"
-    onLoad={() => setOk(true)} onError={() => setDead(true)} />
+    onLoad={() => { setOk(true); ScrollTrigger.refresh() }} onError={() => setDead(true)} />
 }
 
-function useReveal() {
-  useEffect(() => {
-    const els = document.querySelectorAll('.rv')
-    if (RM) { els.forEach(e => e.classList.add('lit')); return }
-    const io = new IntersectionObserver(es => es.forEach(e => {
-      if (e.isIntersecting) { e.target.classList.add('lit'); io.unobserve(e.target) }
-    }), { threshold: 0.12, rootMargin: '0px 0px -5% 0px' })
-    els.forEach(e => io.observe(e))
-    return () => io.disconnect()
-  }, [])
+// 진입: 흩어진 증권 여섯 장이 날아와 한 장으로 겹쳐지고, 커튼처럼 걷힌다
+const PAPERS = [[-62, -40, -24], [58, -46, 19], [-56, 44, 14], [64, 38, -17], [-8, -70, 8], [6, 66, -9]]
+
+function Intro({ onDone }: { onDone: () => void }) {
+  const root = useRef<HTMLDivElement>(null)
+  const [gone, setGone] = useState(RM)
+  useGSAP(() => {
+    if (RM) { onDone(); return }
+    document.documentElement.classList.add('lock')
+    lenis?.stop()
+    const finish = () => {
+      document.documentElement.classList.remove('lock')
+      lenis?.start()
+      setGone(true)
+    }
+    const tl = gsap.timeline({ onComplete: finish })
+    tl.from('.pile i', { x: (k: number) => `${PAPERS[k][0]}vmin`, y: (k: number) => `${PAPERS[k][1]}vmin`, rotation: (k: number) => PAPERS[k][2] * 2, opacity: 0, duration: 1.1, ease: EASE, stagger: 0.07 })
+      .from('.intro p, .intro small', { y: 16, opacity: 0, duration: 0.8, ease: EASE, stagger: 0.1 }, '-=.6')
+      .to('.pile', { scale: 0.86, duration: 0.5, ease: 'power2.in' }, '+=.35')
+      .add(onDone, '-=.1')
+      .to(root.current, { clipPath: 'inset(0 0 100% 0)', duration: 0.9, ease: 'expo.inOut' }, '<')
+    const skip = () => { if (tl.progress() < 0.72) tl.progress(0.72) }
+    const evs = ['wheel', 'touchstart', 'keydown', 'click'] as const
+    evs.forEach(e => addEventListener(e, skip, { once: true, passive: true }))
+    const force = setTimeout(() => tl.progress(1), 4000) // 느린 망에서도 4초면 강제 개봉
+    return () => { clearTimeout(force); evs.forEach(e => removeEventListener(e, skip)) }
+  }, { scope: root })
+  if (gone) return null
+  return (
+    <div ref={root} className="intro" aria-hidden="true">
+      <div className="pile">{PAPERS.map((_, k) => <i key={k} style={{ '--r': `${PAPERS[k][2] * 0.12}deg` } as CSSProperties} />)}</div>
+      <p>흩어진 증권을 한 장으로</p>
+      <small>정소빈 · 굿리치 보험설계사</small>
+    </div>
+  )
 }
 
 function Header() {
   const bar = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    let tick = false
-    const on = () => {
-      if (tick) return
-      tick = true
-      requestAnimationFrame(() => {
-        tick = false
-        const h = document.documentElement.scrollHeight - innerHeight
-        if (bar.current) bar.current.style.transform = `scaleX(${h > 0 ? Math.min(1, scrollY / h) : 0})`
-      })
-    }
-    addEventListener('scroll', on, { passive: true })
-    return () => removeEventListener('scroll', on)
-  }, [])
+  useGSAP(() => {
+    gsap.to(bar.current, { scaleX: 1, ease: 'none', scrollTrigger: { start: 0, end: 'max', scrub: 0.3 } })
+  })
   return (
     <header className="hd">
       <a href="#top" className="brand"><b>정소빈</b><span>굿리치 보험설계사</span></a>
@@ -89,34 +80,74 @@ function Header() {
   )
 }
 
-function Hero() {
+function Hero({ ready }: { ready: boolean }) {
+  const root = useRef<HTMLElement>(null)
+  useGSAP(() => {
+    const mm = gsap.matchMedia()
+    mm.add(MOTION, () => {
+      gsap.set('.hero .hx', { opacity: 0, y: 24 })
+      gsap.set('.hero-win', { clipPath: 'inset(100% 0 0 0)' })
+      // 스크롤하면 창이 여백 없이 화면 끝까지 넓어지고 사진은 천천히 당겨진다
+      gsap.fromTo('.hero-win', { '--inset': 'var(--pad)', '--rad': '6px' }, {
+        '--inset': '0px', '--rad': '0px', ease: 'none',
+        scrollTrigger: { trigger: '.hero-win', start: 'top 85%', end: 'top 15%', scrub: true },
+      })
+      gsap.fromTo('.hero-win img', { yPercent: -8, scale: 1.18 }, {
+        yPercent: 8, scale: 1.04, ease: 'none',
+        scrollTrigger: { trigger: '.hero-win', start: 'top bottom', end: 'bottom top', scrub: true },
+      })
+    })
+    return () => mm.revert()
+  }, { scope: root })
+
+  useGSAP(() => {
+    if (!ready || RM) return
+    const split = SplitText.create('.hero h1', { type: 'lines', mask: 'lines' })
+    gsap.timeline({ delay: 0.15 })
+      .from(split.lines, { yPercent: 110, duration: 1.2, ease: EASE, stagger: 0.1 })
+      .to('.hero .hx', { opacity: 1, y: 0, duration: 1, ease: EASE, stagger: 0.08 }, '-=.9')
+      .to('.hero-win', { clipPath: 'inset(0% 0 0 0)', duration: 1.4, ease: 'expo.inOut' }, '-=1.1')
+  }, { scope: root, dependencies: [ready] })
+
   return (
-    <section className="hero" id="top">
+    <section className="hero" id="top" ref={root}>
       <div className="hero-copy">
-        <p className="who">정소빈 · 굿리치 보험설계사 · 부산 센텀</p>
+        <p className="who hx">정소빈 · 굿리치 보험설계사 · 부산 센텀</p>
         <h1>보험이 몇 개인지<br />세어 보셨나요?</h1>
-        <p className="lead">가입한 증권을 전부 조회해<br />표 한 장으로 정리해 드립니다.</p>
-        <div className="ctas">
-          <a className="btn" href={`tel:${P.mobile}`}>전화 상담</a>
-          <a className="btn line" href="#contact">무료 분석 신청</a>
+        <div className="hero-sub">
+          <p className="lead hx">가입한 증권을 전부 조회해<br />표 한 장으로 정리해 드립니다.</p>
+          <div className="ctas hx">
+            <a className="btn" href={`tel:${P.mobile}`}>전화 상담</a>
+            <a className="btn line" href="#contact">무료 분석 신청</a>
+          </div>
         </div>
       </div>
-      <figure className="hero-pic">
-        <Img src="/img/hero-consult.jpg" alt="상담 테이블에서 보장 분석표를 함께 짚어보는 모습" />
-      </figure>
+      <div className="hero-win">
+        <div className="hero-mask"><Img src="/img/desk.jpg" alt="책상 위에 흩어진 보험 증권과 만년필" /></div>
+      </div>
     </section>
   )
 }
 
 function About() {
+  const root = useRef<HTMLElement>(null)
+  useGSAP(() => {
+    const mm = gsap.matchMedia()
+    mm.add(MOTION, () => {
+      gsap.fromTo('.about-pic', { clipPath: 'inset(100% 0 0 0)' }, { clipPath: 'inset(0% 0 0 0)', duration: 1.4, ease: 'expo.inOut', scrollTrigger: { trigger: '.about-pic', start: 'top 80%' } })
+      gsap.fromTo('.about-pic img', { scale: 1.25, yPercent: -6 }, { scale: 1.05, yPercent: 6, ease: 'none', scrollTrigger: { trigger: '.about-pic', start: 'top bottom', end: 'bottom top', scrub: true } })
+      gsap.fromTo('.facts li', { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 1, ease: EASE, stagger: 0.1, scrollTrigger: { trigger: '.facts', start: 'top 88%' } })
+    })
+    return () => mm.revert()
+  }, { scope: root })
   return (
-    <section className="sec about">
-      <figure className="about-pic rv">
+    <section className="sec about" ref={root}>
+      <figure className="about-pic">
         <Img src="/img/profile.jpg" alt="정소빈 설계사" />
       </figure>
-      <div className="about-copy rv">
-        <h2>새로 드는 것보다<br />가진 걸 먼저 봅니다</h2>
-        <p>굿리치 소속 보험설계사 정소빈입니다. 부산 센텀 사무실에서 대면으로, 멀리 계신 분은 화상으로 만납니다.
+      <div className="about-copy">
+        <h2 className="sp">새로 드는 것보다<br />가진 걸 먼저 봅니다</h2>
+        <p className="rv">굿리치 소속 보험설계사 정소빈입니다. 부산 센텀 사무실에서 대면으로, 멀리 계신 분은 화상으로 만납니다.
           상담은 늘 이미 가입한 증권을 확인하는 데서 시작합니다.</p>
         <ul className="facts">
           <li><strong>0<small>원</small></strong><span>상담료 · 분석표까지</span></li>
@@ -128,13 +159,28 @@ function About() {
   )
 }
 
+// 원칙: 카드가 차례로 위에 쌓이고, 아래 깔린 카드는 뒤로 물러난다
 function Principles() {
+  const root = useRef<HTMLElement>(null)
+  useGSAP(() => {
+    const mm = gsap.matchMedia()
+    mm.add(MOTION, () => {
+      const cards = gsap.utils.toArray<HTMLElement>('.pr')
+      cards.slice(0, -1).forEach((c, k) => {
+        gsap.to(c, {
+          scale: 0.92 + k * 0.02, '--dim': 0.28, ease: 'none',
+          scrollTrigger: { trigger: cards[k + 1], start: 'top 85%', end: 'top 30%', scrub: true },
+        })
+      })
+    })
+    return () => mm.revert()
+  }, { scope: root })
   return (
-    <section className="sec">
-      <h2 className="rv">상담은 이 순서를<br />지킵니다</h2>
-      <div className="pr-grid">
-        {PRINCIPLES.map(p => (
-          <article key={p.t} className="pr rv">
+    <section className="sec prin" ref={root}>
+      <h2 className="sp">상담은 이 순서를<br />지킵니다</h2>
+      <div className="pr-stack">
+        {PRINCIPLES.map((p, k) => (
+          <article key={p.t} className={'pr' + (k === 1 ? ' fill' : '')} style={{ '--i': k } as CSSProperties}>
             <h3>{p.t}</h3>
             <p>{p.d}</p>
           </article>
@@ -149,60 +195,51 @@ function useCount(target: number) {
   const from = useRef(target)
   useEffect(() => {
     if (RM) return
-    const a = from.current, t0 = performance.now()
-    let id = 0
-    const f = (t: number) => {
-      const k = Math.min(1, (t - t0) / 700), e = 1 - Math.pow(1 - k, 3)
-      setV(Math.round(a + (target - a) * e))
-      if (k < 1) id = requestAnimationFrame(f); else from.current = target
-    }
-    id = requestAnimationFrame(f)
-    return () => cancelAnimationFrame(id)
+    const o = { n: from.current }
+    const tw = gsap.to(o, { n: target, duration: 0.9, ease: 'power3.out', onUpdate: () => setV(Math.round(o.n)), onComplete: () => { from.current = target } })
+    return () => { tw.kill(); from.current = target }
   }, [target])
   return RM ? target : v
 }
 
-// 센터피스: 스크롤하면 분석표가 한 단계씩 채워진다
+// 센터피스: 흩어진 증권이 표로 날아와 붙고, 스크롤하면 한 단계씩 정리된다
 function Sheet() {
   const wrap = useRef<HTMLElement>(null)
   const [i, setI] = useState(0)
-  const [seen, setSeen] = useState(RM)
-  const [pinned, setPinned] = useState(() => matchMedia('(min-height: 540px)').matches)
+  const [pinned, setPinned] = useState(() => !RM && matchMedia('(min-height: 540px)').matches)
 
   useEffect(() => {
+    if (RM) return
     const mq = matchMedia('(min-height: 540px)')
     const on = () => setPinned(mq.matches)
     mq.addEventListener('change', on)
     return () => mq.removeEventListener('change', on)
   }, [])
 
-  useEffect(() => {
-    let tick = false
-    const on = () => {
-      if (tick) return
-      tick = true
-      requestAnimationFrame(() => {
-        tick = false
-        const el = wrap.current
-        if (!el) return
-        const r = el.getBoundingClientRect()
-        if (r.top < innerHeight * 0.7) setSeen(true)
-        if (!pinned) return
-        const p = Math.min(0.999, Math.max(0, -r.top / (r.height - innerHeight)))
-        setI(Math.floor(p * STEPS.length))
-        document.body.classList.toggle('in-pin', r.top <= 0 && r.bottom > innerHeight * 0.5)
-      })
-    }
-    on()
-    addEventListener('scroll', on, { passive: true })
-    return () => { removeEventListener('scroll', on); document.body.classList.remove('in-pin') }
-  }, [pinned])
+  useGSAP(() => {
+    if (!pinned) return
+    ScrollTrigger.create({
+      trigger: wrap.current, start: 'top top', end: 'bottom bottom',
+      onUpdate: s => setI(Math.min(STEPS.length - 1, Math.floor(s.progress * STEPS.length))),
+      onToggle: s => document.body.classList.toggle('in-pin', s.isActive),
+    })
+    const rows = gsap.utils.toArray<HTMLElement>('.rows li:not(.gap)')
+    gsap.fromTo(rows, {
+      x: () => gsap.utils.random(-260, 260), y: () => gsap.utils.random(-220, 160), rotation: () => gsap.utils.random(-28, 28),
+      opacity: 0, scale: 1.15,
+    }, {
+      x: 0, y: 0, rotation: 0, opacity: 1, scale: 1, duration: 1.1, ease: EASE, stagger: 0.07, clearProps: 'transform,opacity',
+      scrollTrigger: { trigger: wrap.current, start: 'top 55%', toggleActions: 'play none none reverse' },
+    })
+    gsap.fromTo('.paper', { y: 80, rotation: -3 }, { y: 0, rotation: 0, duration: 1.2, ease: EASE, scrollTrigger: { trigger: wrap.current, start: 'top 70%', toggleActions: 'play none none reverse' } })
+    return () => document.body.classList.remove('in-pin')
+  }, { scope: wrap, dependencies: [pinned], revertOnUpdate: true })
 
   const go = (k: number) => {
     const el = wrap.current
     if (!pinned || !el) return setI(k)
     const top = el.getBoundingClientRect().top + scrollY
-    scrollTo({ top: top + ((k + 0.5) / STEPS.length) * (el.offsetHeight - innerHeight), behavior: RM ? 'auto' : 'smooth' })
+    scrollToY(top + ((k + 0.5) / STEPS.length) * (el.offsetHeight - innerHeight))
   }
 
   const before = SHEET.filter(r => !r.gap).reduce((a, r) => a + r.m, 0)
@@ -212,7 +249,7 @@ function Sheet() {
 
   return (
     <section ref={wrap} id="sheet" className={'sheet' + (pinned ? ' pinned' : '')}
-      style={pinned ? { height: `${STEPS.length * 75 + 100}svh` } : undefined}>
+      style={pinned ? { height: `${STEPS.length * 80 + 100}svh` } : undefined}>
       <div className="sheet-in">
         <div className="sheet-copy">
           <div className="steps" role="tablist" aria-label="분석 단계">
@@ -224,10 +261,10 @@ function Sheet() {
           <h2 key={'t' + i} className="swap">{s.t}</h2>
           <p key={'d' + i} className="swap">{s.d}</p>
         </div>
-        <div className={'paper st' + i + (seen ? ' lit' : '')}>
+        <div className={'paper st' + i}>
           <div className="paper-hd">
             <b>보장 분석표</b>
-            <span>예시 · 실제 고객 자료 아님</span>
+            {i >= 2 && <span className="stamp" aria-hidden="true">점검 완료</span>}
           </div>
           <ul className="rows">
             {SHEET.map((r, k) => {
@@ -235,9 +272,9 @@ function Sheet() {
               const cut = !!r.trim && i >= 3
               return (
                 <li key={r.n + r.co} style={{ '--k': k } as CSSProperties}
-                  className={[r.dup && i >= 1 && 'dup', r.dup && i >= 3 && 'gone', r.gap && 'gap', r.gap && i >= 2 && 'show', note && 'noted'].filter(Boolean).join(' ')}>
+                  className={[r.dup && i >= 1 && 'dup', r.dup && i >= 3 && 'gone', r.gap && 'gap', r.gap && i >= 2 && 'show', cut && 'cut'].filter(Boolean).join(' ')}>
                   <span className="rn"><b>{r.n}</b>{note ? <small className="note">{note}</small> : <small>{r.co}</small>}</span>
-                  <span className="amt">{cut && <s>{won(r.m)}</s>}<em>{won(cut ? r.trim![1] : r.m)}</em></span>
+                  <span className="amt">{cut && <s>{won(r.m)}</s>}<em key={String(cut)}>{won(cut ? r.trim![1] : r.m)}</em></span>
                 </li>
               )
             })}
@@ -247,32 +284,69 @@ function Sheet() {
               <em aria-live="polite">{i >= 3 ? `보장 한 칸 늘고 월 ${won(before - after)}원 절감` : ''}</em></span>
             <strong>{won(total)}<small>원</small></strong>
           </div>
+          <p className="paper-note">예시 금액 · 실제 고객 자료가 아닙니다</p>
         </div>
       </div>
     </section>
   )
 }
 
+// 나이별 보장: 세로 스크롤이 가로로 넘어가는 다섯 장의 사진 카드
 function Life() {
-  const [i, setI] = useState(1)
-  const s = STAGES[i]
+  const root = useRef<HTMLElement>(null)
+  const [act, setAct] = useState(0)
+  useGSAP(() => {
+    const mm = gsap.matchMedia()
+    mm.add(MOTION, () => {
+      const track = root.current!.querySelector<HTMLElement>('.life-track')!
+      const dist = () => Math.max(0, track.scrollWidth - track.clientWidth + parseFloat(getComputedStyle(track).paddingLeft))
+      root.current!.classList.add('hs')
+      const tw = gsap.to(track.children, {
+        x: () => -dist(), ease: 'none',
+        scrollTrigger: {
+          trigger: '.life-pin', pin: true, start: 'top top', end: () => '+=' + dist() * 1.1, scrub: 0.8, invalidateOnRefresh: true,
+          // 카드 한 장이 왼쪽 여백에 딱 맞게 멈추도록 스냅
+          snap: { snapTo: (v: number) => {
+            const step = (track.children[0] as HTMLElement).offsetWidth + 14, d = dist()
+            const pts = STAGES.map((_, k) => Math.min(1, (k * step) / d))
+            return pts.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a))
+          }, duration: { min: 0.2, max: 0.6 }, delay: 0.05, ease: 'power2.inOut' },
+          onUpdate: s => setAct(Math.round(s.progress * (STAGES.length - 1))),
+          onToggle: s => document.body.classList.toggle('in-pin', s.isActive),
+        },
+      })
+      gsap.utils.toArray<HTMLElement>('.stage img').forEach(img => {
+        gsap.fromTo(img, { xPercent: -8 }, { xPercent: 8, ease: 'none', scrollTrigger: { trigger: img.parentElement, containerAnimation: tw, start: 'left right', end: 'right left', scrub: true } })
+      })
+      return () => root.current?.classList.remove('hs')
+    })
+    return () => mm.revert()
+  }, { scope: root })
   return (
-    <section className="sec life" id="life">
-      <h2 className="rv">나이가 바뀌면<br />먼저 볼 보장도 바뀝니다</h2>
-      <div className="tabs rv" role="tablist" aria-label="나이대">
-        {STAGES.map((x, k) => (
-          <button key={x.k} type="button" role="tab" aria-selected={k === i} onClick={() => setI(k)}>{x.k}</button>
-        ))}
-      </div>
-      <div className="life-body" key={i} role="tabpanel">
-        <div className="life-main swap">
-          <span className="tag">{s.tag} · {s.risk}</span>
-          <h3>{s.t}</h3>
-          <p>{s.d}</p>
+    <section className="life" id="life" ref={root}>
+      <div className="life-pin">
+        <div className="life-top">
+          <h2 className="sp">나이가 바뀌면<br />먼저 볼 보장도 바뀝니다</h2>
+          <ol className="ages" aria-hidden="true">
+            {STAGES.map((x, k) => <li key={x.k} className={k === act ? 'on' : ''}>{x.k}</li>)}
+          </ol>
         </div>
-        <ul className="cov swap" aria-label={`${s.k} 먼저 볼 보장`}>
-          {s.cov.map(([a, b]) => <li key={a}><span>{a}</span><b>{b}</b></li>)}
-        </ul>
+        <div className="life-track">
+          {STAGES.map((s, k) => (
+            <article key={s.k} className="stage">
+              <Img src={`/img/age-${[20, 30, 40, 50, 60][k]}.jpg`} alt="" />
+              <div className="stage-tx">
+                <span className="age">{s.k}</span>
+                <span className="tag">{s.tag} · {s.risk}</span>
+                <h3>{s.t}</h3>
+                <p>{s.d}</p>
+                <ul className="cov" aria-label={`${s.k} 먼저 볼 보장`}>
+                  {s.cov.map(([a, b]) => <li key={a}><span>{a}</span><b>{b}</b></li>)}
+                </ul>
+              </div>
+            </article>
+          ))}
+        </div>
       </div>
     </section>
   )
@@ -284,9 +358,9 @@ function Check() {
   const verdict = n <= 3 ? '한 번 정리할 때입니다' : n < 6 ? '거의 정리돼 있습니다' : '잘 관리하고 계십니다'
   return (
     <section className="sec check" id="check">
-      <div className="check-hd rv">
-        <h2>내 보험,<br />여섯 가지만 확인해 보세요</h2>
-        <p>아는 항목을 눌러 표시하세요. 세 개 이하라면 정리할 때입니다.</p>
+      <div className="check-hd">
+        <h2 className="sp">내 보험,<br />여섯 가지만 확인해 보세요</h2>
+        <p className="rv">아는 항목을 눌러 표시하세요. 세 개 이하라면 정리할 때입니다.</p>
       </div>
       <ul className="chk">
         {CHECKS.map((c, k) => (
@@ -298,7 +372,7 @@ function Check() {
         ))}
       </ul>
       <div className="score rv" role="status" aria-live="polite">
-        <strong>{n}<small> / 6</small></strong>
+        <strong key={n} className="pop">{n}<small> / 6</small></strong>
         <span>{verdict}</span>
         <a className="btn inv" href="#contact">분석표 받아보기</a>
       </div>
@@ -309,7 +383,7 @@ function Check() {
 function Faq() {
   return (
     <section className="sec faq">
-      <h2 className="rv">자주 받는 질문</h2>
+      <h2 className="sp">자주 받는 질문</h2>
       <div className="faq-list">
         {FAQ.map(f => (
           <details key={f.q} className="rv">
@@ -334,36 +408,48 @@ function saveVcf(toast: (m: string) => void) {
   toast('연락처 파일을 내려받았어요')
 }
 
-// 명함 사물: 접힌 명함을 누르면 아래로 펼쳐져 연락처가 나온다
+// 명함 사물: 기울이면 빛이 스치고, 누르면 아래로 펼쳐져 연락처가 나온다
 function FoldCard({ toast }: { toast: (m: string) => void }) {
   const [open, setOpen] = useState(false)
   const t = open ? 0 : -1
+  const tilt = (e: PointerEvent<HTMLDivElement>) => {
+    if (RM || e.pointerType !== 'mouse') return
+    const r = e.currentTarget.getBoundingClientRect()
+    const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / Math.min(r.height, r.width / 1.75)
+    e.currentTarget.style.setProperty('--ry', `${(x - 0.5) * 12}deg`)
+    e.currentTarget.style.setProperty('--rx', `${(0.5 - y) * 8}deg`)
+    e.currentTarget.style.setProperty('--gx', `${x * 100}%`)
+  }
+  const reset = (e: PointerEvent<HTMLDivElement>) => { e.currentTarget.style.setProperty('--ry', '0deg'); e.currentTarget.style.setProperty('--rx', '0deg') }
   return (
-    <div className={'fold' + (open ? ' open' : '')}>
-      <div className="leaf">
-        <Img src="/img/profile.jpg" alt="" className="leaf-pic" />
-        <div>
-          <b>정소빈</b>
-          <span>굿리치 · 보험설계사</span>
-          <em>가입 말고, 확인부터</em>
+    <div className={'fold' + (open ? ' open' : '')} onPointerMove={tilt} onPointerLeave={reset}>
+      <div className="fold-in">
+        <div className="leaf">
+          <Img src="/img/profile.jpg" alt="" className="leaf-pic" />
+          <div>
+            <b>정소빈</b>
+            <span>굿리치 · 보험설계사</span>
+            <em>가입 말고, 확인부터</em>
+          </div>
         </div>
-      </div>
-      <div className="cover">
-        <button type="button" className="face front" onClick={() => setOpen(true)} aria-expanded={open} aria-label="명함 펼쳐서 연락처 보기">
-          <span className="org">굿리치</span>
-          <span className="nm">정소빈</span>
-          <span className="jt">보험설계사</span>
-          <span className="hint" aria-hidden="true">눌러서 펼치기</span>
-        </button>
-        <div className="face back" aria-hidden={!open}>
-          <dl>
-            <div><dt>휴대폰</dt><dd><a href={`tel:${P.mobile}`} tabIndex={t}>{P.mobile}</a></dd></div>
-            <div><dt>사무실</dt><dd><a href={`tel:${P.tel}`} tabIndex={t}>{P.tel}</a></dd></div>
-            <div><dt>메일</dt><dd><a href={`mailto:${P.email}`} tabIndex={t}>{P.email}</a></dd></div>
-          </dl>
-          <div className="back-ft">
-            <button type="button" className="save" onClick={() => saveVcf(toast)} tabIndex={t}>연락처 저장</button>
-            <button type="button" className="close" onClick={() => setOpen(false)} tabIndex={t}>접기</button>
+        <div className="cover">
+          <button type="button" className="face front" onClick={() => setOpen(true)} aria-expanded={open} aria-label="명함 펼쳐서 연락처 보기">
+            <span className="org">굿리치</span>
+            <span className="nm">정소빈</span>
+            <span className="jt">보험설계사</span>
+            <span className="hint" aria-hidden="true">눌러서 펼치기</span>
+            <span className="sheen" aria-hidden="true" />
+          </button>
+          <div className="face back" aria-hidden={!open}>
+            <dl>
+              <div><dt>휴대폰</dt><dd><a href={`tel:${P.mobile}`} tabIndex={t}>{P.mobile}</a></dd></div>
+              <div><dt>사무실</dt><dd><a href={`tel:${P.tel}`} tabIndex={t}>{P.tel}</a></dd></div>
+              <div><dt>메일</dt><dd><a href={`mailto:${P.email}`} tabIndex={t}>{P.email}</a></dd></div>
+            </dl>
+            <div className="back-ft">
+              <button type="button" className="save" onClick={() => saveVcf(toast)} tabIndex={t}>연락처 저장</button>
+              <button type="button" className="close" onClick={() => setOpen(false)} tabIndex={t}>접기</button>
+            </div>
           </div>
         </div>
       </div>
@@ -415,7 +501,7 @@ function Form({ toast }: { toast: (m: string) => void }) {
     </div>
   )
   return (
-    <form className="form" onSubmit={submit} noValidate>
+    <form className="form rv" onSubmit={submit} noValidate>
       <h3>무료 분석 신청</h3>
       <p className="sub">네 가지만 남겨주시면 확인 후 연락드립니다.</p>
       <div className="flds">
@@ -431,12 +517,25 @@ function Form({ toast }: { toast: (m: string) => void }) {
   )
 }
 
+const MARQUEE = '가입 말고, 확인부터 · 흩어진 증권을 한 장으로 · 당일 가입 권유 없음 · '
+
 function Contact({ toast }: { toast: (m: string) => void }) {
+  const root = useRef<HTMLElement>(null)
+  useGSAP(() => {
+    const mm = gsap.matchMedia()
+    mm.add(MOTION, () => {
+      gsap.fromTo('.mq-in', { xPercent: 0 }, { xPercent: -50, ease: 'none', scrollTrigger: { trigger: root.current, start: 'top bottom', end: 'bottom top', scrub: 0.6 } })
+      gsap.fromTo('.contact-bg img', { yPercent: -10 }, { yPercent: 10, ease: 'none', scrollTrigger: { trigger: root.current, start: 'top bottom', end: 'bottom top', scrub: true } })
+    })
+    return () => mm.revert()
+  }, { scope: root })
   return (
-    <section className="contact" id="contact">
+    <section className="contact" id="contact" ref={root}>
+      <div className="contact-bg" aria-hidden="true"><Img src="/img/office.jpg" alt="" /></div>
+      <div className="mq" aria-hidden="true"><div className="mq-in">{MARQUEE.repeat(4)}</div></div>
       <div className="contact-in">
         <div className="contact-l">
-          <h2 className="rv">분석표 한 장부터<br />받아 보세요</h2>
+          <h2 className="sp">분석표 한 장부터<br />받아 보세요</h2>
           <p className="rv">상담료는 없고, 가입 권유 없이 분석표만 받고 끝내셔도 됩니다.</p>
           <FoldCard toast={toast} />
           <ul className="links">
@@ -451,18 +550,50 @@ function Contact({ toast }: { toast: (m: string) => void }) {
   )
 }
 
+// 스크롤 공통: 부드러운 관성 스크롤 + 제목 줄 단위 등장 + 요소 순차 등장
+function useMotion() {
+  useEffect(() => {
+    if (RM) return
+    lenis = new Lenis({ lerp: 0.1, anchors: { offset: -76 } })
+    lenis.on('scroll', ScrollTrigger.update)
+    const raf = (t: number) => lenis?.raf(t * 1000)
+    gsap.ticker.add(raf)
+    gsap.ticker.lagSmoothing(0)
+    return () => { gsap.ticker.remove(raf); lenis?.destroy(); lenis = null }
+  }, [])
+  useGSAP(() => {
+    const mm = gsap.matchMedia()
+    mm.add(MOTION, () => {
+      gsap.set('.rv', { opacity: 0, y: 28 })
+      ScrollTrigger.batch('.rv', {
+        start: 'top 90%', once: true,
+        onEnter: els => gsap.to(els, { opacity: 1, y: 0, duration: 1, ease: EASE, stagger: 0.08 }),
+      })
+      gsap.utils.toArray<HTMLElement>('.sp').forEach(el => {
+        SplitText.create(el, {
+          type: 'lines', mask: 'lines', autoSplit: true,
+          onSplit: self => gsap.from(self.lines, { yPercent: 110, duration: 1.1, ease: EASE, stagger: 0.09, scrollTrigger: { trigger: el, start: 'top 88%', once: true } }),
+        })
+      })
+    })
+    document.fonts.ready.then(() => ScrollTrigger.refresh())
+    return () => mm.revert()
+  })
+}
+
 export default function App() {
   const [msg, setMsg] = useState('')
   const [on, setOn] = useState(false)
+  const [ready, setReady] = useState(RM)
   const tRef = useRef<number>(0)
   const toast = (m: string) => { setMsg(m); setOn(true); clearTimeout(tRef.current); tRef.current = setTimeout(() => setOn(false), 2400) }
-  useReveal()
+  useMotion()
   return (
     <>
-      <Intro />
+      <Intro onDone={() => setReady(true)} />
       <Header />
       <main>
-        <Hero />
+        <Hero ready={ready} />
         <About />
         <Principles />
         <Sheet />
@@ -474,7 +605,7 @@ export default function App() {
       <footer className="ft">
         <p>굿리치 · 정소빈 보험설계사 · {P.addr}</p>
         <p>M {P.mobile} · T {P.tel} · F {P.fax} · {P.email}</p>
-        <p>보험 계약 체결 전 상품설명서와 약관을 확인하시기 바랍니다. 분석표의 금액은 설명을 위한 예시입니다.</p>
+        <p>보험 계약 체결 전 상품설명서와 약관을 확인하시기 바랍니다. 분석표의 금액은 설명을 위한 예시이며, 프로필 외 사진은 연출 이미지입니다.</p>
       </footer>
       <nav className="dock" aria-label="빠른 연락">
         <a className="btn" href={`tel:${P.mobile}`}>전화 상담</a>
