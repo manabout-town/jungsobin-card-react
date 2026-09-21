@@ -299,7 +299,7 @@ img { opacity: 0; transition: opacity .48s var(--ease); }
 }
 
 /* 접이식 명함 */
-.fold { position: relative; width: min(360px, 100%); aspect-ratio: 1.75; perspective: 1400px; margin-bottom: calc(min(360px, 100vw - var(--pad) * 2) / 1.75); transition: margin-bottom .48s var(--ease); }
+.fold { position: relative; width: min(360px, 100%); aspect-ratio: 1.75; perspective: 1400px; margin-bottom: calc(min(360px, 100vw - var(--pad) * 2) / 1.75); }
 .leaf, .face { position: absolute; inset: 0; border-radius: var(--r); background: var(--paper); color: var(--ink); }
 .leaf { display: flex; align-items: center; gap: 16px; padding: 18px; box-shadow: 0 1px 0 var(--line) inset; }
 .leaf-pic { width: 72px; height: 96px; object-fit: cover; border-radius: 3px; background: #e6ddd0; }
