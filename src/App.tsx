@@ -605,7 +605,7 @@ export default function App() {
       <footer className="ft">
         <p>굿리치 · 정소빈 보험설계사 · {P.addr}</p>
         <p>M {P.mobile} · T {P.tel} · F {P.fax} · {P.email}</p>
-        <p>보험 계약 체결 전 상품설명서와 약관을 확인하시기 바랍니다. 분석표의 금액은 설명을 위한 예시이며, 프로필 외 사진은 연출 이미지입니다.</p>
+        <p>보험 계약 체결 전 상품설명서와 약관을 확인하시기 바랍니다. 분석표의 금액은 설명을 위한 예시입니다.</p>
       </footer>
       <nav className="dock" aria-label="빠른 연락">
         <a className="btn" href={`tel:${P.mobile}`}>전화 상담</a>
